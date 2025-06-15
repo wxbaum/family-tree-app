@@ -1,15 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { relationshipsApi, peopleApi, Person } from '../../services/api';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { relationshipsApi, peopleApi, Person, Relationship } from '../../services/api';
 import LoadingSpinner from '../UI/LoadingSpinner';
 
-interface AddRelationshipModalProps {
+interface EditRelationshipModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  familyTreeId: string;
-  preselectedPersonId?: string;
+  relationship: Relationship;
+  currentPersonId: string;
 }
 
 interface FormData {
@@ -19,9 +19,10 @@ interface FormData {
   start_date: string;
   end_date: string;
   notes: string;
+  is_active: boolean;
 }
 
-// UPDATED FOR PHASE 1 - New relationship types with enhanced metadata
+// Updated relationship types for Phase 2B
 const relationshipTypes = [
   { 
     value: 'partner', 
@@ -73,104 +74,105 @@ const relationshipTypes = [
   },
 ];
 
-const AddRelationshipModal: React.FC<AddRelationshipModalProps> = ({
+const EditRelationshipModal: React.FC<EditRelationshipModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
-  familyTreeId,
-  preselectedPersonId,
+  relationship,
+  currentPersonId,
 }) => {
   const [error, setError] = useState<string>('');
+  const queryClient = useQueryClient();
 
   const {
     register,
     handleSubmit,
     reset,
     watch,
-    setValue,
-    formState: { errors },
-  } = useForm<FormData>({
-    defaultValues: {
-      from_person_id: preselectedPersonId || '',
-    },
-  });
+    formState: { errors, isDirty },
+  } = useForm<FormData>();
 
-  // Get all people in the family tree for selection
+  // Get the other person in the relationship
+  const otherPersonId = relationship.from_person_id === currentPersonId 
+    ? relationship.to_person_id 
+    : relationship.from_person_id;
+
   const {
-    data: people,
-    isLoading: isLoadingPeople,
+    data: otherPerson,
+    isLoading: isLoadingOtherPerson,
   } = useQuery({
-    queryKey: ['familyTreePeople', familyTreeId],
-    queryFn: () => peopleApi.getByFamilyTree(familyTreeId),
-    enabled: isOpen,
+    queryKey: ['person', otherPersonId],
+    queryFn: () => peopleApi.getById(otherPersonId),
+    enabled: isOpen && !!otherPersonId,
   });
 
-  const createMutation = useMutation({
-    mutationFn: relationshipsApi.create,
+  const {
+    data: currentPerson,
+    isLoading: isLoadingCurrentPerson,
+  } = useQuery({
+    queryKey: ['person', currentPersonId],
+    queryFn: () => peopleApi.getById(currentPersonId),
+    enabled: isOpen && !!currentPersonId,
+  });
+
+  // Reset form when relationship changes or modal opens
+  useEffect(() => {
+    if (isOpen && relationship) {
+      reset({
+        from_person_id: relationship.from_person_id,
+        to_person_id: relationship.to_person_id,
+        relationship_type: relationship.relationship_type,
+        start_date: relationship.start_date ? relationship.start_date.split('T')[0] : '',
+        end_date: relationship.end_date ? relationship.end_date.split('T')[0] : '',
+        notes: relationship.notes || '',
+        is_active: relationship.is_active,
+      });
+    }
+  }, [isOpen, relationship, reset]);
+
+  const updateMutation = useMutation({
+    mutationFn: (data: any) => relationshipsApi.update(relationship.id, data),
     onSuccess: () => {
-      reset();
+      // Invalidate all relevant queries
+      queryClient.invalidateQueries({ queryKey: ['person', currentPersonId] });
+      queryClient.invalidateQueries({ queryKey: ['person', otherPersonId] });
+      queryClient.invalidateQueries({ queryKey: ['personRelationships', currentPersonId] });
+      queryClient.invalidateQueries({ queryKey: ['personRelationships', otherPersonId] });
+      
+      // Also invalidate family tree queries if they're in the same tree
+      if (currentPerson?.family_tree_id) {
+        queryClient.invalidateQueries({ queryKey: ['familyTreeGraph', currentPerson.family_tree_id] });
+        queryClient.invalidateQueries({ queryKey: ['familyTreePeople', currentPerson.family_tree_id] });
+        queryClient.invalidateQueries({ queryKey: ['familyTreeRelationships', currentPerson.family_tree_id] });
+      }
+      
       onSuccess();
     },
     onError: (err: any) => {
-      setError(err.response?.data?.detail || 'Failed to create relationship');
+      setError(err.response?.data?.detail || 'Failed to update relationship');
     },
   });
 
   const onSubmit = async (data: FormData) => {
     setError('');
     
-    // Validate that from and to are different people
-    if (data.from_person_id === data.to_person_id) {
-      setError('Cannot create a relationship between the same person');
-      return;
-    }
-
-    const relationshipData = {
-      from_person_id: data.from_person_id,
-      to_person_id: data.to_person_id,
+    const updateData = {
       relationship_type: data.relationship_type,
-      start_date: data.start_date || undefined,
-      end_date: data.end_date || undefined,
+      start_date: data.start_date ? new Date(data.start_date).toISOString() : undefined,
+      end_date: data.end_date ? new Date(data.end_date).toISOString() : undefined,
       notes: data.notes || undefined,
+      is_active: data.is_active,
     };
 
-    createMutation.mutate(relationshipData);
+    updateMutation.mutate(updateData);
   };
 
   const handleClose = () => {
-    reset();
     setError('');
     onClose();
   };
 
-  const watchedFromPerson = watch('from_person_id');
-  const watchedToPerson = watch('to_person_id');
   const watchedRelationshipType = watch('relationship_type');
-
-  // Helper to get the display name for a person
-  const getPersonName = (personId: string) => {
-    const person = people?.find(p => p.id === personId);
-    return person?.full_name || 'Unknown';
-  };
-
-  // ENHANCED FOR PHASE 1 - Better relationship description logic
-  const getRelationshipDescription = () => {
-    if (!watchedFromPerson || !watchedRelationshipType || !watchedToPerson) return '';
-    
-    const fromName = getPersonName(watchedFromPerson);
-    const toName = getPersonName(watchedToPerson);
-    const relType = relationshipTypes.find(rt => rt.value === watchedRelationshipType);
-    
-    if (!relType) return '';
-    
-    if (relType.bidirectional) {
-      // For bidirectional relationships like partner/sibling
-      return `${fromName} and ${toName} are ${relType.label.toLowerCase()}s`;
-    } else {
-      // For directional relationships like parent/child
-      return `${fromName} ${relType.description} ${toName}`;
-    }
-  };
 
   // Helper to check if current relationship type allows dates
   const currentRelationshipAllowsDates = () => {
@@ -178,7 +180,7 @@ const AddRelationshipModal: React.FC<AddRelationshipModalProps> = ({
     return relType?.allowDates || false;
   };
 
-  // ENHANCED FOR PHASE 1 - Better date field labels
+  // Helper to get date field labels
   const getDateLabels = () => {
     switch (watchedRelationshipType) {
       case 'partner':
@@ -206,8 +208,35 @@ const AddRelationshipModal: React.FC<AddRelationshipModalProps> = ({
     }
   };
 
+  // Helper to describe the relationship
+  const getRelationshipDescription = () => {
+    if (!currentPerson || !otherPerson || !watchedRelationshipType) return '';
+    
+    const relType = relationshipTypes.find(rt => rt.value === watchedRelationshipType);
+    if (!relType) return '';
+    
+    if (relType.bidirectional) {
+      return `${currentPerson.full_name} and ${otherPerson.full_name} are ${relType.label.toLowerCase()}s`;
+    } else {
+      // For directional relationships, maintain the original direction
+      const isOriginalDirection = relationship.from_person_id === currentPersonId;
+      if (isOriginalDirection) {
+        return `${currentPerson.full_name} ${relType.description} ${otherPerson.full_name}`;
+      } else {
+        // Reverse the description for the opposite direction
+        const reverseDescription = watchedRelationshipType === 'parent' ? 'is child of' :
+                                 watchedRelationshipType === 'child' ? 'is parent of' :
+                                 watchedRelationshipType === 'adopted_parent' ? 'is adopted child of' :
+                                 watchedRelationshipType === 'adopted_child' ? 'is adopted parent of' :
+                                 relType.description;
+        return `${currentPerson.full_name} ${reverseDescription} ${otherPerson.full_name}`;
+      }
+    }
+  };
+
   if (!isOpen) return null;
 
+  const isLoading = isLoadingCurrentPerson || isLoadingOtherPerson;
   const dateLabels = getDateLabels();
   const selectedRelType = relationshipTypes.find(rt => rt.value === watchedRelationshipType);
 
@@ -218,7 +247,7 @@ const AddRelationshipModal: React.FC<AddRelationshipModalProps> = ({
           {/* Header */}
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-medium text-gray-900">
-              Add Family Relationship
+              Edit Relationship
             </h3>
             <button
               onClick={handleClose}
@@ -234,37 +263,22 @@ const AddRelationshipModal: React.FC<AddRelationshipModalProps> = ({
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
-                {typeof error === 'string' ? error : 'Failed to create relationship'}
+                {typeof error === 'string' ? error : 'Failed to update relationship'}
               </div>
             )}
 
-            {isLoadingPeople ? (
+            {isLoading ? (
               <LoadingSpinner />
             ) : (
               <>
-                {/* First Person */}
-                <div>
-                  <label htmlFor="from_person_id" className="block text-sm font-medium text-gray-700">
-                    First Person *
-                  </label>
-                  <select
-                    {...register('from_person_id', { required: 'Please select the first person' })}
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                  >
-                    <option value="">Select person...</option>
-                    {people?.map((person: Person) => (
-                      <option key={person.id} value={person.id}>
-                        {person.full_name}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.from_person_id && (
-                    <p className="mt-1 text-sm text-red-600">
-                      {typeof errors.from_person_id.message === 'string' 
-                        ? errors.from_person_id.message 
-                        : 'Please select the first person'}
-                    </p>
-                  )}
+                {/* People involved - Read only display */}
+                <div className="bg-gray-50 p-4 rounded-md">
+                  <h4 className="text-sm font-medium text-gray-700 mb-2">People in this relationship:</h4>
+                  <div className="flex items-center justify-between text-sm text-gray-900">
+                    <span className="font-medium">{currentPerson?.full_name}</span>
+                    <span className="text-gray-500">and</span>
+                    <span className="font-medium">{otherPerson?.full_name}</span>
+                  </div>
                 </div>
 
                 {/* Relationship Type */}
@@ -276,7 +290,6 @@ const AddRelationshipModal: React.FC<AddRelationshipModalProps> = ({
                     {...register('relationship_type', { required: 'Please select a relationship type' })}
                     className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
                   >
-                    <option value="">Select relationship...</option>
                     {relationshipTypes.map((type) => (
                       <option key={type.value} value={type.value}>
                         {type.label}
@@ -295,42 +308,12 @@ const AddRelationshipModal: React.FC<AddRelationshipModalProps> = ({
                   )}
                 </div>
 
-                {/* Second Person */}
-                <div>
-                  <label htmlFor="to_person_id" className="block text-sm font-medium text-gray-700">
-                    Second Person *
-                  </label>
-                  <select
-                    {...register('to_person_id', { required: 'Please select the second person' })}
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                  >
-                    <option value="">Select person...</option>
-                    {people?.filter((person: Person) => person.id !== watchedFromPerson).map((person: Person) => (
-                      <option key={person.id} value={person.id}>
-                        {person.full_name}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.to_person_id && (
-                    <p className="mt-1 text-sm text-red-600">
-                      {typeof errors.to_person_id.message === 'string' 
-                        ? errors.to_person_id.message 
-                        : 'Please select the second person'}
-                    </p>
-                  )}
-                </div>
-
                 {/* Relationship Preview */}
-                {watchedFromPerson && watchedRelationshipType && watchedToPerson && (
+                {currentPerson && otherPerson && watchedRelationshipType && (
                   <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
                     <p className="text-sm text-blue-800">
                       <strong>Relationship:</strong> {getRelationshipDescription()}
                     </p>
-                    {!currentRelationshipAllowsDates() && (
-                      <p className="text-xs text-blue-600 mt-1">
-                        <em>Note: {selectedRelType?.label} relationships are permanent and don't require dates.</em>
-                      </p>
-                    )}
                   </div>
                 )}
 
@@ -379,6 +362,18 @@ const AddRelationshipModal: React.FC<AddRelationshipModalProps> = ({
                     placeholder="Additional details about this relationship..."
                   />
                 </div>
+
+                {/* Active Status */}
+                <div className="flex items-center">
+                  <input
+                    {...register('is_active')}
+                    type="checkbox"
+                    className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                  />
+                  <label htmlFor="is_active" className="ml-2 block text-sm text-gray-900">
+                    This relationship is currently active
+                  </label>
+                </div>
               </>
             )}
 
@@ -388,22 +383,28 @@ const AddRelationshipModal: React.FC<AddRelationshipModalProps> = ({
                 type="button"
                 onClick={handleClose}
                 className="flex-1 btn-secondary"
-                disabled={createMutation.isPending}
+                disabled={updateMutation.isPending}
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 className="flex-1 btn-primary flex items-center justify-center"
-                disabled={createMutation.isPending || isLoadingPeople}
+                disabled={updateMutation.isPending || isLoading || !isDirty}
               >
-                {createMutation.isPending ? (
+                {updateMutation.isPending ? (
                   <LoadingSpinner size="sm" />
                 ) : (
-                  'Create Relationship'
+                  'Save Changes'
                 )}
               </button>
             </div>
+
+            {!isDirty && !isLoading && (
+              <p className="text-center text-sm text-gray-500">
+                Make changes to enable the save button
+              </p>
+            )}
           </form>
         </div>
       </div>
@@ -411,4 +412,4 @@ const AddRelationshipModal: React.FC<AddRelationshipModalProps> = ({
   );
 };
 
-export default AddRelationshipModal;
+export default EditRelationshipModal;

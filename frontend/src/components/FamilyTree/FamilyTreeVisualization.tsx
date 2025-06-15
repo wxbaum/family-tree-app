@@ -26,6 +26,74 @@ const nodeTypes: NodeTypes = {
   person: PersonNode,
 };
 
+// ENHANCED FOR PHASE 1 - Comprehensive edge styling configuration
+function getEdgeStyleConfig(relationshipType: string) {
+  const configs: { [key: string]: any } = {
+    partner: {
+      color: '#ef4444', // red
+      strokeWidth: 3,
+      strokeDasharray: 'none',
+      label: '❤️',
+      labelBgColor: '#fef2f2',
+      labelBorderColor: '#ef4444'
+    },
+    parent: {
+      color: '#3b82f6', // blue
+      strokeWidth: 2,
+      strokeDasharray: 'none',
+      label: '👨‍👩‍👧‍👦',
+      labelBgColor: '#eff6ff',
+      labelBorderColor: '#3b82f6'
+    },
+    child: {
+      color: '#3b82f6', // blue
+      strokeWidth: 2,
+      strokeDasharray: 'none',
+      label: '🧒',
+      labelBgColor: '#eff6ff',
+      labelBorderColor: '#3b82f6'
+    },
+    sibling: {
+      color: '#f59e0b', // amber/orange
+      strokeWidth: 2,
+      strokeDasharray: '5,5',
+      label: '👫',
+      labelBgColor: '#fffbeb',
+      labelBorderColor: '#f59e0b'
+    },
+    adopted_parent: {
+      color: '#10b981', // green
+      strokeWidth: 2,
+      strokeDasharray: '3,3',
+      label: '👨‍👩‍👧‍👦✨',
+      labelBgColor: '#f0fdf4',
+      labelBorderColor: '#10b981'
+    },
+    adopted_child: {
+      color: '#10b981', // green
+      strokeWidth: 2,
+      strokeDasharray: '3,3',
+      label: '🧒✨',
+      labelBgColor: '#f0fdf4',
+      labelBorderColor: '#10b981'
+    }
+  };
+
+  return configs[relationshipType] || {
+    color: '#6b7280', // gray
+    strokeWidth: 1,
+    strokeDasharray: 'none',
+    label: '?',
+    labelBgColor: '#f9fafb',
+    labelBorderColor: '#6b7280'
+  };
+}
+
+// ENHANCED FOR PHASE 1 - Better edge color function (backwards compatible)
+function getEdgeColor(relationshipType: string): string {
+  return getEdgeStyleConfig(relationshipType).color;
+}
+
 const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
   graphData,
   familyTreeId,
@@ -50,36 +118,52 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
     deleteMutation.mutate(personId);
   };
 
-  // Convert API data to React Flow format
+  // ENHANCED FOR PHASE 1 - Improved node positioning with better spacing
   const createNodesFromData = (data: FamilyTreeGraph) => {
-    return data.nodes.map((node, index) => ({
-      id: node.id,
-      type: 'person',
-      position: { 
-        x: (index % 4) * 300 + 100, 
-        y: Math.floor(index / 4) * 200 + 100 
-      },
-      data: {
-        person: node.data,
-        onEdit: (personId: string) => navigate(`/person/${personId}`),
-        onDelete: handleDeletePerson,
-      },
-    }));
+    return data.nodes.map((node, index) => {
+      // Enhanced grid layout with more spacing for better visualization
+      const cols = Math.ceil(Math.sqrt(data.nodes.length));
+      const row = Math.floor(index / cols);
+      const col = index % cols;
+      
+      return {
+        id: node.id,
+        type: 'person',
+        position: { 
+          x: col * 350 + 100, // Increased horizontal spacing
+          y: row * 250 + 100  // Increased vertical spacing
+        },
+        data: {
+          person: node.data,
+          onEdit: (personId: string) => navigate(`/person/${personId}`),
+          onDelete: handleDeletePerson,
+        },
+      };
+    });
   };
 
+  // ENHANCED FOR PHASE 1 - Comprehensive edge styling
   const createEdgesFromData = (data: FamilyTreeGraph) => {
-    return data.edges.map((edge) => ({
-      id: edge.id,
-      source: edge.source,
-      target: edge.target,
-      type: 'smoothstep',
-      label: edge.data.relationship_type,
-      labelStyle: { fontSize: 12, fontWeight: 600 },
-      style: { 
-        strokeWidth: 2,
-        stroke: getEdgeColor(edge.data.relationship_type),
-      },
-    }));
+    return data.edges.map((edge) => {
+      const styleConfig = getEdgeStyleConfig(edge.data.relationship_type);
+      
+      return {
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        type: 'smoothstep',
+        label: styleConfig.label,
+        labelStyle: { 
+          fontSize: 12, 
+          fontWeight: 600,
+        },
+        style: { 
+          strokeWidth: styleConfig.strokeWidth,
+          stroke: styleConfig.color,
+          strokeDasharray: styleConfig.strokeDasharray,
+        },
+      };
+    });
   };
 
   const [nodes, setNodes, onNodesChange] = useNodesState(createNodesFromData(graphData));
@@ -114,22 +198,5 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
     </div>
   );
 };
-
-function getEdgeColor(relationshipType: string): string {
-  switch (relationshipType) {
-    case 'partner':
-      return '#ef4444'; // red
-    case 'parent':
-    case 'child':
-      return '#3b82f6'; // blue
-    case 'sibling':
-      return '#f59e0b'; // amber/orange
-    case 'adopted_parent':
-    case 'adopted_child':
-      return '#10b981'; // green
-    default:
-      return '#6b7280'; // gray
-  }
-}
 
 export default FamilyTreeVisualization;

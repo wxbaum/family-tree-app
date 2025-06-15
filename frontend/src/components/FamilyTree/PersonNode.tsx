@@ -39,6 +39,10 @@ const PersonNode: React.FC<PersonNodeProps> = ({ data }) => {
     }
   };
 
+  const handleViewDetails = () => {
+    onEdit(person.id);
+  };
+
   return (
     <div className="bg-white rounded-lg border-2 border-gray-200 shadow-md hover:shadow-lg transition-shadow duration-200 min-w-[200px]">
       <Handle
@@ -111,7 +115,7 @@ const PersonNode: React.FC<PersonNodeProps> = ({ data }) => {
         {/* Action Button */}
         <div className="mt-3 flex justify-center">
           <button
-            onClick={() => onEdit(person.id)}
+            onClick={handleViewDetails}
             className="text-xs bg-primary-600 hover:bg-primary-700 text-white px-3 py-1 rounded transition-colors"
           >
             View Details
