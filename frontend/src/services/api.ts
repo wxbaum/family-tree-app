@@ -70,7 +70,7 @@ export interface Relationship {
   id: string;
   from_person_id: string;
   to_person_id: string;
-  relationship_type: 'spouse' | 'parent' | 'child' | 'adopted_child' | 'adopted_parent';
+  relationship_type: 'partner' | 'parent' | 'child' | 'sibling' | 'adopted_child' | 'adopted_parent';
   start_date?: string;
   end_date?: string;
   is_active: boolean;

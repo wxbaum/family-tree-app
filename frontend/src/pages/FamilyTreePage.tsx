@@ -5,10 +5,12 @@ import { familyTreesApi, peopleApi } from '../services/api';
 import LoadingSpinner from '../components/UI/LoadingSpinner';
 import FamilyTreeVisualization from '../components/FamilyTree/FamilyTreeVisualization';
 import AddPersonModal from '../components/Person/AddPersonModal';
+import AddRelationshipModal from '../components/Relationship/AddRelationshipModal';
 
 const FamilyTreePage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [isAddPersonModalOpen, setIsAddPersonModalOpen] = useState(false);
+  const [isAddRelationshipModalOpen, setIsAddRelationshipModalOpen] = useState(false);
   const queryClient = useQueryClient();
 
   const {
@@ -47,6 +49,13 @@ const FamilyTreePage: React.FC = () => {
     // Also refresh any people queries
     queryClient.invalidateQueries({ queryKey: ['familyTreePeople', id] });
     // Force a refetch of the graph data immediately
+    queryClient.refetchQueries({ queryKey: ['familyTreeGraph', id] });
+  };
+
+  const handleAddRelationshipSuccess = () => {
+    setIsAddRelationshipModalOpen(false);
+    // Refresh the graph data to show new relationship
+    queryClient.invalidateQueries({ queryKey: ['familyTreeGraph', id] });
     queryClient.refetchQueries({ queryKey: ['familyTreeGraph', id] });
   };
 
@@ -119,6 +128,17 @@ const FamilyTreePage: React.FC = () => {
               </svg>
               Add Person
             </button>
+            {people && people.length >= 2 && (
+              <button
+                onClick={() => setIsAddRelationshipModalOpen(true)}
+                className="btn-secondary flex items-center"
+              >
+                <svg className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+                Add Relationship
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -149,7 +169,7 @@ const FamilyTreePage: React.FC = () => {
               <div className="mt-6">
                 <button
                   onClick={() => setIsAddPersonModalOpen(true)}
-                  className="btn-primary"
+                  className="btn-primary mr-3"
                 >
                   Add First Person
                 </button>
@@ -164,6 +184,14 @@ const FamilyTreePage: React.FC = () => {
         isOpen={isAddPersonModalOpen}
         onClose={() => setIsAddPersonModalOpen(false)}
         onSuccess={handleAddPersonSuccess}
+        familyTreeId={id}
+      />
+
+      {/* Add Relationship Modal */}
+      <AddRelationshipModal
+        isOpen={isAddRelationshipModalOpen}
+        onClose={() => setIsAddRelationshipModalOpen(false)}
+        onSuccess={handleAddRelationshipSuccess}
         familyTreeId={id}
       />
     </div>

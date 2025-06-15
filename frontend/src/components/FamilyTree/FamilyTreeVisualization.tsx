@@ -117,11 +117,13 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
 
 function getEdgeColor(relationshipType: string): string {
   switch (relationshipType) {
-    case 'spouse':
+    case 'partner':
       return '#ef4444'; // red
     case 'parent':
     case 'child':
       return '#3b82f6'; // blue
+    case 'sibling':
+      return '#f59e0b'; // amber/orange
     case 'adopted_parent':
     case 'adopted_child':
       return '#10b981'; // green
