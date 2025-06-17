@@ -74,9 +74,13 @@ const PersonPage: React.FC = () => {
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'Unknown';
-    return new Date(dateString).toLocaleDateString();
+    // Parse as local date to avoid timezone issues
+    const dateOnly = dateString.split('T')[0]; // Get just the date part: "2025-06-10"
+    const [year, month, day] = dateOnly.split('-');
+    const localDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    return localDate.toLocaleDateString();
   };
-
+  
   const getLifespan = () => {
     const birthYear = person.birth_date ? new Date(person.birth_date).getFullYear() : null;
     const deathYear = person.death_date ? new Date(person.death_date).getFullYear() : null;

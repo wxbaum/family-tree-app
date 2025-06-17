@@ -15,7 +15,10 @@ const PersonNode: React.FC<PersonNodeProps> = ({ data }) => {
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return '';
-    return new Date(dateString).getFullYear();
+    // Parse as local date to avoid timezone issues
+    const dateOnly = dateString.split('T')[0]; // Get just the date part: "2025-06-10"
+    const [year, month, day] = dateOnly.split('-');
+    return parseInt(year); // Just return the year
   };
 
   const getLifeSpan = () => {
