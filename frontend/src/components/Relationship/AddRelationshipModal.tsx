@@ -1,7 +1,17 @@
-import React, { useState } from 'react';
+// frontend/src/components/Relationship/AddRelationshipModal.tsx
+
+import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { relationshipsApi, peopleApi, Person } from '../../services/api';
+import { 
+  relationshipsApi, 
+  peopleApi, 
+  Person, 
+  RelationshipCategory, 
+  RelationshipSubtype,
+  CreateRelationshipData,
+  RelationshipCategories 
+} from '../../services/api';
 import LoadingSpinner from '../UI/LoadingSpinner';
 
 interface AddRelationshipModalProps {
@@ -15,63 +25,13 @@ interface AddRelationshipModalProps {
 interface FormData {
   from_person_id: string;
   to_person_id: string;
-  relationship_type: string;
+  relationship_category: RelationshipCategory;
+  generation_difference?: number;
+  relationship_subtype?: RelationshipSubtype;
   start_date: string;
   end_date: string;
   notes: string;
 }
-
-// UPDATED FOR PHASE 1 - New relationship types with enhanced metadata
-const relationshipTypes = [
-  { 
-    value: 'partner', 
-    label: 'Partner/Spouse', 
-    description: 'Partner/spouse of', 
-    allowDates: true,
-    bidirectional: true,
-    helpText: 'Marriage, civil partnership, or romantic partnership'
-  },
-  { 
-    value: 'parent', 
-    label: 'Parent', 
-    description: 'Is parent of', 
-    allowDates: false,
-    bidirectional: false,
-    helpText: 'Biological or legal parent relationship'
-  },
-  { 
-    value: 'child', 
-    label: 'Child', 
-    description: 'Is child of', 
-    allowDates: false,
-    bidirectional: false,
-    helpText: 'Biological or legal child relationship'
-  },
-  { 
-    value: 'sibling', 
-    label: 'Sibling', 
-    description: 'Is sibling of', 
-    allowDates: false,
-    bidirectional: true,
-    helpText: 'Brother or sister (biological or legal)'
-  },
-  { 
-    value: 'adopted_parent', 
-    label: 'Adoptive Parent', 
-    description: 'Adopted parent of', 
-    allowDates: true,
-    bidirectional: false,
-    helpText: 'Legal adoptive parent relationship'
-  },
-  { 
-    value: 'adopted_child', 
-    label: 'Adopted Child', 
-    description: 'Adopted child of', 
-    allowDates: true,
-    bidirectional: false,
-    helpText: 'Legal adoptive child relationship'
-  },
-];
 
 const AddRelationshipModal: React.FC<AddRelationshipModalProps> = ({
   isOpen,
@@ -81,56 +41,80 @@ const AddRelationshipModal: React.FC<AddRelationshipModalProps> = ({
   preselectedPersonId,
 }) => {
   const [error, setError] = useState<string>('');
-
+  
   const {
     register,
     handleSubmit,
     reset,
     watch,
     setValue,
-    formState: { errors },
-  } = useForm<FormData>({
-    defaultValues: {
-      from_person_id: preselectedPersonId || '',
-    },
-  });
+    formState: { errors, isSubmitting },
+  } = useForm<FormData>();
 
-  // Get all people in the family tree for selection
+  // Watch form values for dynamic behavior
+  const watchedFromPerson = watch('from_person_id');
+  const watchedToPerson = watch('to_person_id');
+  const watchedCategory = watch('relationship_category');
+
+  // Get all people in the family tree
   const {
     data: people,
     isLoading: isLoadingPeople,
   } = useQuery({
-    queryKey: ['familyTreePeople', familyTreeId],
+    queryKey: ['people', familyTreeId],
     queryFn: () => peopleApi.getByFamilyTree(familyTreeId),
     enabled: isOpen,
   });
 
+  // Get relationship categories and their configurations
+  const {
+    data: relationshipCategories,
+    isLoading: isLoadingCategories,
+  } = useQuery({
+    queryKey: ['relationshipCategories'],
+    queryFn: () => relationshipsApi.getCategories(),
+    enabled: isOpen,
+  });
+
+  // Create relationship mutation
   const createMutation = useMutation({
     mutationFn: relationshipsApi.create,
     onSuccess: () => {
-      reset();
       onSuccess();
+      handleClose();
     },
-    onError: (err: any) => {
-      setError(err.response?.data?.detail || 'Failed to create relationship');
+    onError: (error: any) => {
+      setError(error.response?.data?.detail || 'Failed to create relationship');
     },
   });
 
-  const onSubmit = async (data: FormData) => {
-    setError('');
-    
-    // Validate that from and to are different people
-    if (data.from_person_id === data.to_person_id) {
-      setError('Cannot create a relationship between the same person');
-      return;
+  // Set preselected person if provided
+  useEffect(() => {
+    if (preselectedPersonId && isOpen) {
+      setValue('from_person_id', preselectedPersonId);
     }
+  }, [preselectedPersonId, isOpen, setValue]);
 
-    const relationshipData = {
+  // Reset form when modal opens/closes
+  useEffect(() => {
+    if (isOpen) {
+      reset();
+      setError('');
+      if (preselectedPersonId) {
+        setValue('from_person_id', preselectedPersonId);
+      }
+    }
+  }, [isOpen, reset, preselectedPersonId, setValue]);
+
+  const onSubmit = (data: FormData) => {
+    const relationshipData: CreateRelationshipData = {
       from_person_id: data.from_person_id,
       to_person_id: data.to_person_id,
-      relationship_type: data.relationship_type,
-      start_date: data.start_date || undefined,
-      end_date: data.end_date || undefined,
+      relationship_category: data.relationship_category,
+      generation_difference: data.generation_difference || undefined,
+      relationship_subtype: data.relationship_subtype || undefined,
+      start_date: data.start_date ? new Date(data.start_date).toISOString() : undefined,
+      end_date: data.end_date ? new Date(data.end_date).toISOString() : undefined,
       notes: data.notes || undefined,
     };
 
@@ -138,63 +122,69 @@ const AddRelationshipModal: React.FC<AddRelationshipModalProps> = ({
   };
 
   const handleClose = () => {
-    reset();
     setError('');
     onClose();
   };
 
-  const watchedFromPerson = watch('from_person_id');
-  const watchedToPerson = watch('to_person_id');
-  const watchedRelationshipType = watch('relationship_type');
-
-  // Helper to get the display name for a person
+  // Helper functions
   const getPersonName = (personId: string) => {
     const person = people?.find(p => p.id === personId);
     return person?.full_name || 'Unknown';
   };
 
-  // ENHANCED FOR PHASE 1 - Better relationship description logic
+  const getCurrentCategoryConfig = () => {
+    if (!relationshipCategories || !watchedCategory) return null;
+    return relationshipCategories.categories[watchedCategory];
+  };
+
   const getRelationshipDescription = () => {
-    if (!watchedFromPerson || !watchedRelationshipType || !watchedToPerson) return '';
+    if (!watchedFromPerson || !watchedCategory || !watchedToPerson) return '';
     
     const fromName = getPersonName(watchedFromPerson);
     const toName = getPersonName(watchedToPerson);
-    const relType = relationshipTypes.find(rt => rt.value === watchedRelationshipType);
+    const categoryConfig = getCurrentCategoryConfig();
     
-    if (!relType) return '';
+    if (!categoryConfig) return '';
     
-    if (relType.bidirectional) {
-      // For bidirectional relationships like partner/sibling
-      return `${fromName} and ${toName} are ${relType.label.toLowerCase()}s`;
+    if (categoryConfig.bidirectional) {
+      return `${fromName} and ${toName} are ${watchedCategory.replace('_', ' ')}s`;
+    } else if (watchedCategory === 'family_line') {
+      const genDiff = watch('generation_difference');
+      if (genDiff === -1) {
+        return `${fromName} is parent of ${toName}`;
+      } else if (genDiff === 1) {
+        return `${fromName} is child of ${toName}`;
+      }
+      return `${fromName} and ${toName} have a family relationship`;
     } else {
-      // For directional relationships like parent/child
-      return `${fromName} ${relType.description} ${toName}`;
+      return `${fromName} has ${watchedCategory.replace('_', ' ')} relationship with ${toName}`;
     }
   };
 
-  // Helper to check if current relationship type allows dates
-  const currentRelationshipAllowsDates = () => {
-    const relType = relationshipTypes.find(rt => rt.value === watchedRelationshipType);
-    return relType?.allowDates || false;
-  };
-
-  // ENHANCED FOR PHASE 1 - Better date field labels
   const getDateLabels = () => {
-    switch (watchedRelationshipType) {
+    switch (watchedCategory) {
       case 'partner':
         return {
-          start: 'Marriage/Partnership Date',
-          end: 'Divorce/Separation Date',
-          startHelp: 'When the marriage or partnership began',
-          endHelp: 'When the marriage or partnership ended (if applicable)'
+          start: 'Relationship Start Date',
+          end: 'Relationship End Date',
+          startHelp: 'When the relationship began (marriage, engagement, etc.)',
+          endHelp: 'When the relationship ended (divorce, separation, etc.)'
         };
-      case 'adopted_parent':
-      case 'adopted_child':
+      case 'family_line':
+        const subtype = watch('relationship_subtype');
+        if (subtype === 'adoptive') {
+          return {
+            start: 'Adoption Date',
+            end: 'End Date',
+            startHelp: 'When the adoption was finalized',
+            endHelp: 'End of legal relationship (rare)'
+          };
+        }
         return {
-          start: 'Adoption Date',
-          end: 'End Date',
-          startHelp: 'When the adoption was finalized',
-          endHelp: 'End of legal adoption (rare)'
+          start: 'Relationship Start Date',
+          end: 'Relationship End Date',
+          startHelp: 'When this relationship was established',
+          endHelp: 'When this relationship ended'
         };
       default:
         return {
@@ -208,12 +198,13 @@ const AddRelationshipModal: React.FC<AddRelationshipModalProps> = ({
 
   if (!isOpen) return null;
 
+  const categoryConfig = getCurrentCategoryConfig();
   const dateLabels = getDateLabels();
-  const selectedRelType = relationshipTypes.find(rt => rt.value === watchedRelationshipType);
+  const isLoading = isLoadingPeople || isLoadingCategories;
 
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-20 mx-auto p-5 border w-full max-w-lg shadow-lg rounded-md bg-white">
+      <div className="relative top-20 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white">
         <div className="mt-3">
           {/* Header */}
           <div className="flex items-center justify-between mb-4">
@@ -234,138 +225,180 @@ const AddRelationshipModal: React.FC<AddRelationshipModalProps> = ({
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
-                {typeof error === 'string' ? error : 'Failed to create relationship'}
+                {error}
               </div>
             )}
 
-            {isLoadingPeople ? (
+            {isLoading ? (
               <LoadingSpinner />
             ) : (
               <>
-                {/* First Person */}
-                <div>
-                  <label htmlFor="from_person_id" className="block text-sm font-medium text-gray-700">
-                    First Person *
-                  </label>
-                  <select
-                    {...register('from_person_id', { required: 'Please select the first person' })}
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                  >
-                    <option value="">Select person...</option>
-                    {people?.map((person: Person) => (
-                      <option key={person.id} value={person.id}>
-                        {person.full_name}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.from_person_id && (
-                    <p className="mt-1 text-sm text-red-600">
-                      {typeof errors.from_person_id.message === 'string' 
-                        ? errors.from_person_id.message 
-                        : 'Please select the first person'}
-                    </p>
-                  )}
-                </div>
-
-                {/* Relationship Type */}
-                <div>
-                  <label htmlFor="relationship_type" className="block text-sm font-medium text-gray-700">
-                    Relationship Type *
-                  </label>
-                  <select
-                    {...register('relationship_type', { required: 'Please select a relationship type' })}
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                  >
-                    <option value="">Select relationship...</option>
-                    {relationshipTypes.map((type) => (
-                      <option key={type.value} value={type.value}>
-                        {type.label}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.relationship_type && (
-                    <p className="mt-1 text-sm text-red-600">
-                      {typeof errors.relationship_type.message === 'string' 
-                        ? errors.relationship_type.message 
-                        : 'Please select a relationship type'}
-                    </p>
-                  )}
-                  {selectedRelType && (
-                    <p className="mt-1 text-xs text-gray-500">{selectedRelType.helpText}</p>
-                  )}
-                </div>
-
-                {/* Second Person */}
-                <div>
-                  <label htmlFor="to_person_id" className="block text-sm font-medium text-gray-700">
-                    Second Person *
-                  </label>
-                  <select
-                    {...register('to_person_id', { required: 'Please select the second person' })}
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                  >
-                    <option value="">Select person...</option>
-                    {people?.filter((person: Person) => person.id !== watchedFromPerson).map((person: Person) => (
-                      <option key={person.id} value={person.id}>
-                        {person.full_name}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.to_person_id && (
-                    <p className="mt-1 text-sm text-red-600">
-                      {typeof errors.to_person_id.message === 'string' 
-                        ? errors.to_person_id.message 
-                        : 'Please select the second person'}
-                    </p>
-                  )}
-                </div>
-
-                {/* Relationship Preview */}
-                {watchedFromPerson && watchedRelationshipType && watchedToPerson && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
-                    <p className="text-sm text-blue-800">
-                      <strong>Relationship:</strong> {getRelationshipDescription()}
-                    </p>
-                    {!currentRelationshipAllowsDates() && (
-                      <p className="text-xs text-blue-600 mt-1">
-                        <em>Note: {selectedRelType?.label} relationships are permanent and don't require dates.</em>
+                {/* Person Selection */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="from_person_id" className="block text-sm font-medium text-gray-700">
+                      First Person *
+                    </label>
+                    <select
+                      {...register('from_person_id', { required: 'Please select the first person' })}
+                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                    >
+                      <option value="">Select person...</option>
+                      {people?.map((person: Person) => (
+                        <option key={person.id} value={person.id}>
+                          {person.full_name}
+                        </option>
+                      ))}
+                    </select>
+                    {errors.from_person_id && (
+                      <p className="mt-1 text-sm text-red-600">
+                        {errors.from_person_id.message}
                       </p>
                     )}
                   </div>
-                )}
 
-                {/* Optional Dates - Only show for relationships that allow dates */}
-                {currentRelationshipAllowsDates() && (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label htmlFor="start_date" className="block text-sm font-medium text-gray-700">
-                        {dateLabels.start}
-                      </label>
-                      <input
-                        {...register('start_date')}
-                        type="date"
-                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">
-                        {dateLabels.startHelp}
+                  <div>
+                    <label htmlFor="to_person_id" className="block text-sm font-medium text-gray-700">
+                      Second Person *
+                    </label>
+                    <select
+                      {...register('to_person_id', { required: 'Please select the second person' })}
+                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                    >
+                      <option value="">Select person...</option>
+                      {people?.filter(p => p.id !== watchedFromPerson).map((person: Person) => (
+                        <option key={person.id} value={person.id}>
+                          {person.full_name}
+                        </option>
+                      ))}
+                    </select>
+                    {errors.to_person_id && (
+                      <p className="mt-1 text-sm text-red-600">
+                        {errors.to_person_id.message}
                       </p>
-                    </div>
+                    )}
+                  </div>
+                </div>
 
-                    <div>
-                      <label htmlFor="end_date" className="block text-sm font-medium text-gray-700">
-                        {dateLabels.end}
-                      </label>
-                      <input
-                        {...register('end_date')}
-                        type="date"
-                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">
-                        {dateLabels.endHelp}
+                {/* Relationship Category */}
+                <div>
+                  <label htmlFor="relationship_category" className="block text-sm font-medium text-gray-700">
+                    Relationship Category *
+                  </label>
+                  <select
+                    {...register('relationship_category', { required: 'Please select a relationship category' })}
+                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                  >
+                    <option value="">Select category...</option>
+                    {relationshipCategories && Object.entries(relationshipCategories.categories).map(([key, config]) => (
+                      <option key={key} value={key}>
+                        {config.description}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.relationship_category && (
+                    <p className="mt-1 text-sm text-red-600">
+                      {errors.relationship_category.message}
+                    </p>
+                  )}
+                  {categoryConfig && (
+                    <p className="mt-1 text-sm text-gray-500">
+                      {categoryConfig.description}
+                    </p>
+                  )}
+                </div>
+
+                {/* Generation Difference - Only for family_line */}
+                {watchedCategory === 'family_line' && (
+                  <div>
+                    <label htmlFor="generation_difference" className="block text-sm font-medium text-gray-700">
+                      Generation Relationship *
+                    </label>
+                    <select
+                      {...register('generation_difference', { 
+                        required: watchedCategory === 'family_line' ? 'Please select generation relationship' : false,
+                        valueAsNumber: true 
+                      })}
+                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                    >
+                      <option value="">Select relationship...</option>
+                      <option value={-1}>First person is parent of second person</option>
+                      <option value={1}>First person is child of second person</option>
+                    </select>
+                    {errors.generation_difference && (
+                      <p className="mt-1 text-sm text-red-600">
+                        {errors.generation_difference.message}
                       </p>
-                    </div>
+                    )}
+                    <p className="mt-1 text-sm text-gray-500">
+                      This determines the parent-child direction of the relationship.
+                    </p>
                   </div>
                 )}
+
+                {/* Relationship Subtype */}
+                {categoryConfig && categoryConfig.valid_subtypes.length > 0 && (
+                  <div>
+                    <label htmlFor="relationship_subtype" className="block text-sm font-medium text-gray-700">
+                      Relationship Type
+                    </label>
+                    <select
+                      {...register('relationship_subtype')}
+                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                    >
+                      <option value="">Select type (optional)...</option>
+                      {categoryConfig.valid_subtypes.map((subtype: string) => (
+                        <option key={subtype} value={subtype}>
+                          {subtype.charAt(0).toUpperCase() + subtype.slice(1).replace('_', ' ')}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-sm text-gray-500">
+                      Optional: Specify the specific type of {watchedCategory.replace('_', ' ')} relationship.
+                    </p>
+                  </div>
+                )}
+
+                {/* Relationship Description Preview */}
+                {watchedFromPerson && watchedToPerson && watchedCategory && (
+                  <div className="bg-blue-50 border border-blue-200 p-3 rounded-md">
+                    <h4 className="text-sm font-medium text-blue-900 mb-1">Relationship Preview:</h4>
+                    <p className="text-sm text-blue-800">
+                      {getRelationshipDescription()}
+                    </p>
+                  </div>
+                )}
+
+                {/* Date Fields */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="start_date" className="block text-sm font-medium text-gray-700">
+                      {dateLabels.start}
+                    </label>
+                    <input
+                      type="date"
+                      {...register('start_date')}
+                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                    />
+                    <p className="mt-1 text-sm text-gray-500">
+                      {dateLabels.startHelp}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label htmlFor="end_date" className="block text-sm font-medium text-gray-700">
+                      {dateLabels.end}
+                    </label>
+                    <input
+                      type="date"
+                      {...register('end_date')}
+                      className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                    />
+                    <p className="mt-1 text-sm text-gray-500">
+                      {dateLabels.endHelp}
+                    </p>
+                  </div>
+                </div>
 
                 {/* Notes */}
                 <div>
@@ -374,31 +407,37 @@ const AddRelationshipModal: React.FC<AddRelationshipModalProps> = ({
                   </label>
                   <textarea
                     {...register('notes')}
-                    rows={2}
+                    rows={3}
                     className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                    placeholder="Additional details about this relationship..."
+                    placeholder="Additional notes about this relationship (optional)"
                   />
                 </div>
               </>
             )}
 
-            {/* Actions */}
-            <div className="flex space-x-3 pt-4">
+            {/* Form Actions */}
+            <div className="flex justify-end space-x-3 pt-4">
               <button
                 type="button"
                 onClick={handleClose}
-                className="flex-1 btn-secondary"
-                disabled={createMutation.isPending}
+                className="inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                disabled={isSubmitting}
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="flex-1 btn-primary flex items-center justify-center"
-                disabled={createMutation.isPending || isLoadingPeople}
+                className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isSubmitting || isLoading}
               >
-                {createMutation.isPending ? (
-                  <LoadingSpinner size="sm" />
+                {isSubmitting ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Creating...
+                  </>
                 ) : (
                   'Create Relationship'
                 )}

@@ -1,3 +1,5 @@
+# backend/app/main.py - Proper Async Implementation
+
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -14,7 +16,7 @@ from app.models.database import User
 async def lifespan(app: FastAPI):
     # Startup
     print("Starting up...")
-    create_database()
+    await create_database()  # Now properly async
     yield
     # Shutdown
     print("Shutting down...")

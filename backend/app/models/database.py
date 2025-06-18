@@ -1,26 +1,23 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, ForeignKey, Float, Index
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
-from fastapi_users.db import SQLAlchemyBaseUserTable
+# backend/app/models/database.py
+
 import uuid
+from sqlalchemy import Column, String, Text, Boolean, Date, DateTime, ForeignKey, Integer, Index, func
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
 
-class User(SQLAlchemyBaseUserTable[uuid.UUID], Base):
+class User(Base):
     __tablename__ = "users"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    email = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    hashed_password = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     is_superuser = Column(Boolean, default=False, nullable=False)
     is_verified = Column(Boolean, default=False, nullable=False)
-    
-    # Subscription fields
-    subscription_tier = Column(String, default="free", nullable=False)
-    subscription_expires = Column(DateTime, nullable=True)
+    subscription_tier = Column(String(50), default="free", nullable=False)
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -60,8 +57,8 @@ class Person(Base):
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=True)
     maiden_name = Column(String(100), nullable=True)
-    birth_date = Column(DateTime, nullable=True)
-    death_date = Column(DateTime, nullable=True)
+    birth_date = Column(Date, nullable=True)  # Changed from DateTime
+    death_date = Column(Date, nullable=True)  # Changed from DateTime
     birth_place = Column(String(255), nullable=True)
     death_place = Column(String(255), nullable=True)
     bio = Column(Text, nullable=True)
@@ -105,17 +102,31 @@ class Person(Base):
         return self.first_name
 
 class Relationship(Base):
+    """
+    NEW RELATIONSHIP SYSTEM - Phase 2
+    
+    Represents bidirectional relationships between people with category-based organization.
+    Single record represents both directions of the relationship.
+    """
     __tablename__ = "relationships"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     from_person_id = Column(UUID(as_uuid=True), ForeignKey("people.id"), nullable=False)
     to_person_id = Column(UUID(as_uuid=True), ForeignKey("people.id"), nullable=False)
     
-    # Relationship type: spouse, parent, child, adopted_child, adopted_parent
-    relationship_type = Column(String(50), nullable=False)
+    # NEW: Relationship category instead of specific types
+    # Categories: family_line, partner, sibling, extended_family
+    relationship_category = Column(String(50), nullable=False)
+    
+    # NEW: Generation difference - only for family_line relationships
+    # -1 = from_person is parent of to_person
+    # +1 = from_person is child of to_person
+    # null = not applicable (partner, sibling, extended_family)
+    # Constraints: only -1, 0, +1 allowed (no grandparents direct links)
+    generation_difference = Column(Integer, nullable=True)
     
     # Optional date information
-    start_date = Column(DateTime, nullable=True)  # marriage date, birth date, adoption date
+    start_date = Column(DateTime, nullable=True)  # marriage date, adoption date, etc.
     end_date = Column(DateTime, nullable=True)    # divorce date, death affecting relationship
     
     # Status
@@ -123,6 +134,14 @@ class Relationship(Base):
     
     # Additional information
     notes = Column(Text, nullable=True)
+    
+    # NEW: Relationship subtype for more specific categorization
+    # Examples: 
+    # - family_line: "biological", "adoptive", "step"
+    # - partner: "married", "engaged", "dating", "divorced"
+    # - sibling: "biological", "half", "step", "adoptive"
+    # - extended_family: "aunt", "uncle", "cousin", "grandparent", "grandchild"
+    relationship_subtype = Column(String(50), nullable=True)
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -132,13 +151,20 @@ class Relationship(Base):
     from_person = relationship("Person", foreign_keys=[from_person_id], back_populates="relationships_from")
     to_person = relationship("Person", foreign_keys=[to_person_id], back_populates="relationships_to")
     
-    # Indexes
+    # Indexes for performance
     __table_args__ = (
         Index('ix_relationships_from_person', 'from_person_id'),
         Index('ix_relationships_to_person', 'to_person_id'),
-        Index('ix_relationships_type', 'relationship_type'),
+        Index('ix_relationships_category', 'relationship_category'),
+        Index('ix_relationships_generation', 'generation_difference'),
         Index('ix_relationships_active', 'is_active'),
+        # Composite index for common queries
+        Index('ix_relationships_person_category', 'from_person_id', 'relationship_category'),
+        Index('ix_relationships_bidirectional', 'from_person_id', 'to_person_id'),
     )
+    
+    def __repr__(self):
+        return f"<Relationship {self.relationship_category}({self.generation_difference}) {self.from_person_id}->{self.to_person_id}>"
 
 class PersonFile(Base):
     __tablename__ = "person_files"
@@ -149,12 +175,10 @@ class PersonFile(Base):
     # File information
     filename = Column(String(255), nullable=False)
     original_filename = Column(String(255), nullable=False)
-    file_path = Column(String(500), nullable=False)  # Path in object storage
-    file_type = Column(String(50), nullable=False)   # image, pdf, document
+    file_path = Column(String(500), nullable=False)
+    file_type = Column(String(50), nullable=False)  # 'photo', 'document', 'video', etc.
     mime_type = Column(String(100), nullable=False)
-    file_size = Column(Integer, nullable=False)      # Size in bytes
-    
-    # Optional metadata
+    file_size = Column(Integer, nullable=False)
     description = Column(Text, nullable=True)
     
     # Timestamps

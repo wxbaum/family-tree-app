@@ -1,3 +1,5 @@
+# backend/app/core/auth.py - Async Version
+
 import uuid
 from typing import Optional
 from fastapi import Depends, Request
@@ -7,15 +9,15 @@ from fastapi_users.authentication import (
     BearerTransport,
     JWTStrategy,
 )
-from fastapi_users.db import SQLAlchemyUserDatabase
-from sqlalchemy.orm import Session
+from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.database import User
 from app.core.database import get_database_session
 from app.core.config import settings
 
-# User database dependency
-async def get_user_db(session: Session = Depends(get_database_session)):
+# Async user database dependency
+async def get_user_db(session: AsyncSession = Depends(get_database_session)):
     yield SQLAlchemyUserDatabase(session, User)
 
 # User manager

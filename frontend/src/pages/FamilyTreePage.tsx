@@ -147,7 +147,6 @@ const FamilyTreePage: React.FC = () => {
       <div className="flex-1 bg-gray-50">
         {graphData && graphData.nodes.length > 0 ? (
           <FamilyTreeVisualization
-            graphData={graphData}
             familyTreeId={id}
           />
         ) : (
