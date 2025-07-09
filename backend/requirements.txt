@@ -1,29 +1,98 @@
-# backend/requirements.txt - Compatible Versions that Work Together
+# backend/requirements.txt - Clean Firestore-based Dependencies
 
+# ================================================================
+# CORE WEB FRAMEWORK
+# ================================================================
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
-sqlalchemy==2.0.23
-alembic==1.12.1
 
-# Async database drivers
-asyncpg==0.29.0
-psycopg2-binary==2.9.7
+# ================================================================
+# GOOGLE CLOUD / FIREBASE DEPENDENCIES
+# ================================================================
 
-# Pydantic - Use 2.4.2 for better compatibility
+# Firebase Admin SDK for authentication and Firestore
+firebase-admin==6.4.0
+
+# Google Cloud Firestore client
+google-cloud-firestore==2.13.1
+
+# Google Cloud Storage for file uploads
+google-cloud-storage==2.10.0
+
+# Google Cloud Core (dependency management)
+google-cloud-core==2.3.3
+
+# ================================================================
+# DATA VALIDATION AND SERIALIZATION
+# ================================================================
+
+# Pydantic for data validation
 pydantic==2.4.2
 pydantic-settings==2.1.0
 
-# Form handling - Use version compatible with FastAPI Users
+# ================================================================
+# HTTP AND FILE HANDLING
+# ================================================================
+
+# Form handling for file uploads
 python-multipart==0.0.6
 
-# Authentication and security - Use older compatible versions
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-fastapi-users==12.1.2
-fastapi-users-db-sqlalchemy==6.0.1
+# HTTP client for external API calls (if needed)
+httpx==0.25.2
 
-# Other dependencies
-oci==2.112.1
-pillow==10.4.0
-PyPDF2==3.0.1
+# ================================================================
+# UTILITY LIBRARIES
+# ================================================================
+
+# Environment variable management
 python-dotenv==1.0.0
+
+# Date and time utilities
+python-dateutil==2.8.2
+
+# Image processing for file validation
+pillow==10.4.0
+
+# ================================================================
+# DEVELOPMENT AND TESTING
+# ================================================================
+
+# Testing framework
+pytest==7.4.3
+pytest-asyncio==0.21.1
+
+# HTTP testing
+httpx==0.25.2
+
+# Test coverage
+pytest-cov==4.1.0
+
+# Code formatting
+black==23.11.0
+isort==5.12.0
+
+# Type checking
+mypy==1.7.1
+
+# Linting
+flake8==6.1.0
+
+# ================================================================
+# PRODUCTION DEPENDENCIES
+# ================================================================
+
+# ASGI server for production
+gunicorn==21.2.0
+
+# Structured logging
+structlog==23.2.0
+
+# Monitoring and health checks
+prometheus-client==0.19.0
+
+# ================================================================
+# ASTROLOGY FEATURES (Optional)
+# ================================================================
+
+# For advanced astrology calculations (if implementing complex compatibility)
+# pyephem==9.99  # Uncomment if adding astronomical calculations
