@@ -437,3 +437,6 @@ backend/alembic/versions/*.backup
 
 # Local configuration overrides
 config.local.json
+
+# Packages
+package-lock.json
