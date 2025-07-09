@@ -1,12 +1,13 @@
-# backend/app/core/firestore.py
+# backend/app/core/firestore.py - Google Cloud Version
 
 import os
 import logging
 from typing import Optional
-import firebase_admin
-from firebase_admin import credentials, firestore
+from google.cloud import firestore
 from google.cloud.firestore import Client as FirestoreClient
 from google.cloud import exceptions as gcp_exceptions
+from google.auth import default
+from google.auth.exceptions import DefaultCredentialsError
 
 from app.core.config import settings
 
@@ -14,14 +15,15 @@ logger = logging.getLogger(__name__)
 
 class FirestoreManager:
     """
-    Singleton manager for Firebase Admin SDK and Firestore client.
+    Singleton manager for Google Cloud Firestore client.
+    Uses Google Cloud Firestore directly (no Firebase Admin SDK).
     Handles initialization, connection testing, and provides a clean interface
     for Firestore operations throughout the application.
     """
     
     _instance: Optional['FirestoreManager'] = None
     _firestore_client: Optional[FirestoreClient] = None
-    _firebase_app: Optional[firebase_admin.App] = None
+    _project_id: Optional[str] = None
     
     def __new__(cls) -> 'FirestoreManager':
         if cls._instance is None:
@@ -29,51 +31,53 @@ class FirestoreManager:
         return cls._instance
     
     def __init__(self):
-        """Initialize Firebase only once."""
+        """Initialize Google Cloud Firestore only once."""
         if self._firestore_client is None:
-            self._initialize_firebase()
+            self._initialize_firestore()
     
-    def _initialize_firebase(self) -> None:
+    def _initialize_firestore(self) -> None:
         """
-        Initialize Firebase Admin SDK with appropriate credentials.
-        Supports both service account files and application default credentials.
+        Initialize Google Cloud Firestore client with appropriate credentials.
+        Supports service account files, environment variables, and Application Default Credentials.
         """
         try:
-            # Check if Firebase is already initialized
-            if not firebase_admin._apps:
-                logger.info("Initializing Firebase Admin SDK...")
-                
-                # Try service account file first (for local development)
-                if (hasattr(settings, 'FIREBASE_CREDENTIALS_PATH') and 
-                    settings.FIREBASE_CREDENTIALS_PATH and 
-                    os.path.exists(settings.FIREBASE_CREDENTIALS_PATH)):
-                    
-                    logger.info(f"Using service account file: {settings.FIREBASE_CREDENTIALS_PATH}")
-                    cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)
-                    self._firebase_app = firebase_admin.initialize_app(cred, {
-                        'projectId': settings.GOOGLE_CLOUD_PROJECT
-                    })
-                
-                else:
-                    # Use Application Default Credentials (for Cloud Run deployment)
-                    logger.info("Using Application Default Credentials")
-                    self._firebase_app = firebase_admin.initialize_app(options={
-                        'projectId': settings.GOOGLE_CLOUD_PROJECT
-                    })
-                
-                logger.info("Firebase Admin SDK initialized successfully")
+            logger.info("Initializing Google Cloud Firestore client...")
             
+            # Method 1: Service account key file (for local development)
+            service_account_path = getattr(settings, 'FIREBASE_CREDENTIALS_PATH', '')
+            if service_account_path and os.path.exists(service_account_path):
+                logger.info(f"Using service account file: {service_account_path}")
+                os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = service_account_path
+            
+            # Method 2: Environment variable GOOGLE_APPLICATION_CREDENTIALS
+            elif os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'):
+                logger.info(f"Using GOOGLE_APPLICATION_CREDENTIALS: {os.environ['GOOGLE_APPLICATION_CREDENTIALS']}")
+            
+            # Method 3: Application Default Credentials (for Cloud deployment or gcloud auth)
             else:
-                logger.info("Firebase Admin SDK already initialized")
-                self._firebase_app = firebase_admin.get_app()
+                logger.info("Using Application Default Credentials")
             
             # Initialize Firestore client
-            self._firestore_client = firestore.client()
-            logger.info("Firestore client initialized successfully")
+            # This will automatically use credentials in this order:
+            # 1. GOOGLE_APPLICATION_CREDENTIALS environment variable
+            # 2. User credentials from gcloud auth application-default login
+            # 3. Service account attached to Cloud resource (Cloud Run, GCE, etc.)
             
+            self._firestore_client = firestore.Client(project=settings.GOOGLE_CLOUD_PROJECT)
+            self._project_id = settings.GOOGLE_CLOUD_PROJECT
+            
+            logger.info(f"Google Cloud Firestore client initialized successfully for project: {self._project_id}")
+            
+        except DefaultCredentialsError as e:
+            logger.error(f"Authentication failed: {e}")
+            logger.error("Solutions:")
+            logger.error("1. Download service account key and set FIREBASE_CREDENTIALS_PATH in .env")
+            logger.error("2. Set GOOGLE_APPLICATION_CREDENTIALS environment variable")
+            logger.error("3. Run 'gcloud auth application-default login'")
+            raise RuntimeError(f"Google Cloud authentication failed: {e}")
         except Exception as e:
-            logger.error(f"Failed to initialize Firebase: {e}")
-            raise RuntimeError(f"Firebase initialization failed: {e}")
+            logger.error(f"Failed to initialize Google Cloud Firestore: {e}")
+            raise RuntimeError(f"Firestore initialization failed: {e}")
     
     @property
     def db(self) -> FirestoreClient:
@@ -132,22 +136,22 @@ class FirestoreManager:
             # Consume the iterator to actually make the request
             list(docs)
             
-            logger.info("Firestore connection test successful")
+            logger.info("Google Cloud Firestore connection test successful")
             return True
             
         except gcp_exceptions.PermissionDenied:
             # This is actually expected - we don't have read permissions on this collection
             # But it means Firestore is reachable
-            logger.info("Firestore connection test successful (permission denied expected)")
+            logger.info("Google Cloud Firestore connection test successful (permission denied expected)")
             return True
             
         except Exception as e:
-            logger.error(f"Firestore connection test failed: {e}")
+            logger.error(f"Google Cloud Firestore connection test failed: {e}")
             return False
     
     def get_project_id(self) -> str:
         """Get the current Google Cloud project ID."""
-        return settings.GOOGLE_CLOUD_PROJECT
+        return self._project_id or settings.GOOGLE_CLOUD_PROJECT
     
     def batch(self) -> firestore.WriteBatch:
         """Create a new write batch for atomic operations."""
@@ -206,7 +210,7 @@ async def check_firestore_health() -> dict:
         is_connected = await firestore_manager.test_connection()
         return {
             "service": "firestore",
-            "status": "healthy" if is_connected else "unhealthy",
+            "status": "healthy" if is_connected else "unhealthy", 
             "project_id": firestore_manager.get_project_id(),
             "details": "Connection successful" if is_connected else "Connection failed"
         }
