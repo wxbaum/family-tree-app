@@ -26,17 +26,23 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Family Tree API"
     VERSION: str = "1.0.0"
     
-    # File upload limits
+    # File upload settings - using string that will be split, not List type
     MAX_FILE_SIZE: int = 10 * 1024 * 1024  # 10MB
-    ALLOWED_FILE_TYPES: List[str] = [
-        "image/jpeg", "image/png", "image/gif", "image/webp",
-        "application/pdf"
-    ]
+    ALLOWED_FILE_TYPES: str = "image/jpeg,image/png,image/gif,image/webp,application/pdf"
+    
+    # File storage settings
+    FILE_STORAGE_TYPE: str = "local"
+    UPLOAD_PATH: str = "uploads"
     
     @property
     def allowed_origins_list(self) -> List[str]:
         """Convert the comma-separated string to a list"""
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",")]
+    
+    @property
+    def allowed_file_types_list(self) -> List[str]:
+        """Convert the comma-separated string to a list"""
+        return [file_type.strip() for file_type in self.ALLOWED_FILE_TYPES.split(",")]
     
     class Config:
         env_file = ".env"
